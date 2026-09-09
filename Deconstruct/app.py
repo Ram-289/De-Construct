@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import re
 
 # 1. Page Configuration & Title Layout
 st.set_page_config(page_title="ScopePilot AI", page_icon="🚀", layout="wide")
@@ -44,14 +45,14 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
                 system_prompt = (
                     "You are an Elite Agile Business Analyst and Product Strategy Director.\n"
                     "Analyze the provided raw customer software requirement text.\n"
-                    "You MUST reply ONLY with a valid JSON object string. Do not wrap it in markdown code blocks like ```json. Just raw text JSON.\n\n"
+                    "You must provide a valid JSON object matching the schema below. You can wrap it in markdown block tags if needed.\n\n"
                     "The JSON format structure must be exactly:\n"
                     "{\n"
                     '  "user_stories": [{"story": "As a... I want to... So that...", "criteria": "Given... When... Then..."}],\n'
                     '  "conflicts": [{"issue": "Description", "severity": "High (🔴 Red)", "fix": "Fix instructions"}],\n'
                     '  "ambiguities": [{"term": "Vague word", "type": "Performance/UX", "suggestion": "Metric goal"}],\n'
                     '  "market_insights": [{"source": "Reddit", "finding": "Complaint details", "action": "Recommendation"}],\n'
-                    '  "financials": {"est_cost": "\(Value", "dev_hours": "Hours", "infra_cost": "\)/mo", "trend_analysis": "Trends summary"}\n'
+                    '  "financials": {"est_cost": "$Value", "dev_hours": "Hours", "infra_cost": "$/mo", "trend_analysis": "Trends summary"}\n'
                     "}"
                 )
 
@@ -65,7 +66,7 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
                     "model": "openrouter/free",
                     "messages": [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Target Budget: \${target_budget}\nRaw Requirements:\n{raw_input}"}
+                        {"role": "user", "content": f"Target Budget: ${target_budget}\nRaw Requirements:\n{raw_input}"}
                     ]
                 }
 
@@ -73,19 +74,18 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
                 response = requests.post(url, headers=headers, data=json.dumps(payload))
                 response_json = response.json()
 
-                # Parsing the raw JSON data block from the server structure safely
+                # Parsing the raw content block safely
                 raw_content = response_json["choices"][0]["message"]["content"].strip()
                 
-                # Cleaning out any potential markdown markers if added by the model
-                if raw_content.startswith("```"):
-                    lines = raw_content.split("\n")
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    raw_content = "\n".join(lines).strip()
+                # --- BULLETPROOF REGEX PARSER ---
+                # Search for anything trapped inside curly brackets if the model added conversational text surrounding it
+                json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
+                if json_match:
+                    clean_json_content = json_match.group(0)
+                else:
+                    clean_json_content = raw_content
                 
-                data = json.loads(raw_content)
+                data = json.loads(clean_json_content)
                 
                 st.success("✅ Lifecycle Analysis Complete! Exploration Dashboard Generated.")
                 st.divider()
