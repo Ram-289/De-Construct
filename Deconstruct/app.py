@@ -10,13 +10,16 @@ st.title("🚀 ScopePilot AI: Requirements Ingestion & Market Discovery Engine")
 st.caption("Translating Human Chaos into Development-Ready Specs, Competitor Intelligence, and Cost Forecasts.")
 st.divider()
 
-# 2. Secure OpenRouter API Key Initialization
+# 2. Secure Google Gemini API Key Initialization
+# Reads from Streamlit Secrets (Cloud) or Sidebar input box
 if "OPENAI_API_KEY" in st.secrets:
-    api_key = st.secrets["OPENAI_API_KEY"]
+    gemini_key = st.secrets["OPENAI_API_KEY"]
+elif "GEMINI_API_KEY" in st.secrets:
+    gemini_key = st.secrets["GEMINI_API_KEY"]
 else:
-    st.sidebar.warning("⚠️ OpenRouter API Key not found in Streamlit Secrets. Please enter it below to test.")
-    user_key = st.sidebar.text_input("Enter OpenRouter API Key (starts with sk-or-v1-)", type="password")
-    api_key = user_key
+    st.sidebar.warning("⚠️ Gemini API Key not found in Streamlit Secrets. Please enter it below to test.")
+    user_key = st.sidebar.text_input("Enter Google Gemini API Key (starts with AIzaSy)", type="password")
+    gemini_key = user_key
 
 # 3. Sidebar Input Controls & Ingestion UI
 st.sidebar.header("📌 Project Configurations")
@@ -33,20 +36,20 @@ raw_input = st.text_area(
     height=150
 )
 
-# 4. Core Direct API Request Processing
+# 4. Core Google Gemini Native API Execution
 if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
-    if not api_key:
-        st.error("❌ Please provide a valid OpenRouter API key in your Secrets configuration or sidebar.")
+    if not gemini_key:
+        st.error("❌ Please provide a valid Gemini API key in your Secrets configuration or sidebar.")
     elif not raw_input.strip():
         st.warning("⚠️ Please provide input text to analyze.")
     else:
-        with st.spinner("Analyzing requirements via Direct HTTP OpenRouter connection..."):
+        with st.spinner("Analyzing requirements via Native Google Gemini Engine..."):
             try:
-                system_prompt = (
+                system_instruction = (
                     "You are an Elite Agile Business Analyst and Product Strategy Director.\n"
                     "Analyze the provided raw customer software requirement text.\n"
-                    "You must provide a valid JSON object matching the schema below. You can wrap it in markdown block tags if needed.\n\n"
-                    "The JSON format structure must be exactly:\n"
+                    "You MUST reply ONLY with a valid JSON object matching the requested schema. Do not include markdown code block syntax formatting. Just the raw text JSON.\n\n"
+                    "The JSON schema layout structure must be exactly:\n"
                     "{\n"
                     '  "user_stories": [{"story": "As a... I want to... So that...", "criteria": "Given... When... Then..."}],\n'
                     '  "conflicts": [{"issue": "Description", "severity": "High (🔴 Red)", "fix": "Fix instructions"}],\n'
@@ -56,41 +59,37 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
                     "}"
                 )
 
-                # Constructing direct HTTP Post structure to route past SDK object differences
-                url = "https://openrouter.ai"
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
+                # Official Google Gemini API Endpoint URL Configuration
+                url = f"https://googleapis.com{gemini_key}"
+                
+                headers = {"Content-Type": "application/json"}
+                
+                # Payload designed strictly for native Google developer protocols
                 payload = {
-                    "model": "openrouter/free",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Target Budget: ${target_budget}\nRaw Requirements:\n{raw_input}"}
-                    ]
+                    "contents": [{
+                        "parts": [{
+                            "text": f"{system_instruction}\n\nTarget Budget: ${target_budget}\nProduct Category: {product_category}\nClient Requirements:\n{raw_input}"
+                        }]
+                    }],
+                    "generationConfig": {
+                        "responseMimeType": "application/json" # Forces Gemini to native JSON compliance mode
+                    }
                 }
 
-                # Sending direct network request
+                # Executing direct HTTP post network request
                 response = requests.post(url, headers=headers, data=json.dumps(payload))
                 response_json = response.json()
 
-                # Parsing the raw content block safely
-                raw_content = response_json["choices"][0]["message"]["content"].strip()
+                # Digging the generated string text cleanly out of Google's response object array
+                raw_content = response_json["candidates"][0]["content"]["parts"][0]["text"].strip()
                 
-                # --- BULLETPROOF REGEX PARSER ---
-                # Search for anything trapped inside curly brackets if the model added conversational text surrounding it
-                json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
-                if json_match:
-                    clean_json_content = json_match.group(0)
-                else:
-                    clean_json_content = raw_content
-                
-                data = json.loads(clean_json_content)
+                # Convert the extracted clean string text back into a visual Python dictionary object
+                data = json.loads(raw_content)
                 
                 st.success("✅ Lifecycle Analysis Complete! Exploration Dashboard Generated.")
                 st.divider()
 
-                # 5. Tabbed UI Framework Rendering
+                # 5. Tabbed UI Framework Rendering (Phases 2 - 5)
                 tab1, tab2, tab3, tab4 = st.tabs([
                     "🟢 Actionable Requirements", 
                     "⚠️ Risk & Ambiguity Audit", 
@@ -146,4 +145,4 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
 
             except Exception as e:
                 st.error(f"Failed to safely compile or parse data structure layout: {str(e)}")
-                st.info("💡 Tip: Free endpoints occasionally experience heavy load spikes. Try clicking the action button again to re-verify.")
+                st.info("💡 Note: Verify your Gemini key is copied correctly and billing boundaries are not locked.")
