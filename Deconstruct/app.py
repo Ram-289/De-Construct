@@ -1,10 +1,8 @@
 import streamlit as st
-import openai
-from pydantic import BaseModel, Field
-from typing import List
+import requests
 import json
 
-# 1. Page Configuration & Title
+# 1. Page Configuration & Title Layout
 st.set_page_config(page_title="ScopePilot AI", page_icon="🚀", layout="wide")
 
 st.title("🚀 ScopePilot AI: Requirements Ingestion & Market Discovery Engine")
@@ -25,7 +23,7 @@ product_category = st.sidebar.selectbox(
     "Product Domain Category", 
     ["E-Commerce & Retail", "SaaS Dashboard & Analytics", "FinTech & Payments", "Healthcare & Telemed"]
 )
-target_budget = st.sidebar.slider("Target Investment Boundary (\$)", 5000, 200000, 45000, step=5000)
+target_budget = st.sidebar.slider("Target Investment Boundary ($)", 5000, 200000, 45000, step=5000)
 
 st.subheader("📥 Ingestion Layer: Raw Customer Input")
 raw_input = st.text_area(
@@ -34,56 +32,60 @@ raw_input = st.text_area(
     height=150
 )
 
-# 4. Core OpenRouter Engine Execution
+# 4. Core Direct API Request Processing
 if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
     if not api_key:
         st.error("❌ Please provide a valid OpenRouter API key in your Secrets configuration or sidebar.")
     elif not raw_input.strip():
         st.warning("⚠️ Please provide input text to analyze.")
     else:
-        with st.spinner("Analyzing requirements via OpenRouter Free Tier..."):
+        with st.spinner("Analyzing requirements via Direct HTTP OpenRouter connection..."):
             try:
-                # Prompt instructing the model to output raw, pure JSON text natively
                 system_prompt = (
                     "You are an Elite Agile Business Analyst and Product Strategy Director.\n"
                     "Analyze the provided raw customer software requirement text.\n"
-                    "You MUST reply ONLY with a valid JSON object. Do not include markdown code block syntax (like ```json). Just the raw text JSON.\n\n"
-                    "The JSON format must strictly be:\n"
+                    "You MUST reply ONLY with a valid JSON object string. Do not wrap it in markdown code blocks like ```json. Just raw text JSON.\n\n"
+                    "The JSON format structure must be exactly:\n"
                     "{\n"
                     '  "user_stories": [{"story": "As a... I want to... So that...", "criteria": "Given... When... Then..."}],\n'
                     '  "conflicts": [{"issue": "Description", "severity": "High (🔴 Red)", "fix": "Fix instructions"}],\n'
                     '  "ambiguities": [{"term": "Vague word", "type": "Performance/UX", "suggestion": "Metric goal"}],\n'
                     '  "market_insights": [{"source": "Reddit", "finding": "Complaint details", "action": "Recommendation"}],\n'
-                    '  "financials": {"est_cost": "$Value", "dev_hours": "Hours", "infra_cost": "$/mo", "trend_analysis": "Trends summary"}\n'
+                    '  "financials": {"est_cost": "\(Value", "dev_hours": "Hours", "infra_cost": "\)/mo", "trend_analysis": "Trends summary"}\n'
                     "}"
                 )
 
-                # Standard text completion client setup
-                client = openai.OpenAI(
-                    base_url="https://openrouter.ai",
-                    api_key=api_key
-                )
-                
-                # Standard completion format (highly compatible with free models)
-                response = client.chat.completions.create(
-                    model="openrouter/free",
-                    messages=[
+                # Constructing direct HTTP Post structure to route past SDK object differences
+                url = "https://openrouter.ai"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "openrouter/free",
+                    "messages": [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Target Budget: ${target_budget}\nRaw Requirements:\n{raw_input}"}
+                        {"role": "user", "content": f"Target Budget: \${target_budget}\nRaw Requirements:\n{raw_input}"}
                     ]
-                )
+                }
+
+                # Sending direct network request
+                response = requests.post(url, headers=headers, data=json.dumps(payload))
+                response_json = response.json()
+
+                # Parsing the raw JSON data block from the server structure safely
+                raw_content = response_json["choices"][0]["message"]["content"].strip()
                 
-                # Safely extract text content string
-                raw_json_text = response.choices[0].message.content.strip()
+                # Cleaning out any potential markdown markers if added by the model
+                if raw_content.startswith("```"):
+                    lines = raw_content.split("\n")
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    raw_content = "\n".join(lines).strip()
                 
-                # Clean clean potential markdown formatting wrappers if model included them
-                if raw_json_text.startswith("```"):
-                    raw_json_text = raw_json_text.split("```")[1]
-                    if raw_json_text.startswith("json"):
-                        raw_json_text = raw_json_text[4:]
-                
-                # Convert string directly to Python dictionary object
-                data = json.loads(raw_json_text.strip())
+                data = json.loads(raw_content)
                 
                 st.success("✅ Lifecycle Analysis Complete! Exploration Dashboard Generated.")
                 st.divider()
@@ -144,4 +146,4 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
 
             except Exception as e:
                 st.error(f"Failed to safely compile or parse data structure layout: {str(e)}")
-                st.info("💡 Tip: Try clicking the button again. Free models sometimes return inconsistent text structures on the first attempt.")
+                st.info("💡 Tip: Free endpoints occasionally experience heavy load spikes. Try clicking the action button again to re-verify.")
