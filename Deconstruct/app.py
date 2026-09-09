@@ -2,6 +2,7 @@ import streamlit as st
 import openai
 from pydantic import BaseModel, Field
 from typing import List
+import json
 
 # 1. Page Configuration & Title
 st.set_page_config(page_title="ScopePilot AI", page_icon="🚀", layout="wide")
@@ -11,7 +12,6 @@ st.caption("Translating Human Chaos into Development-Ready Specs, Competitor Int
 st.divider()
 
 # 2. Secure OpenRouter API Key Initialization
-# Checks Streamlit Secrets first, falls back to local environment variables
 if "OPENAI_API_KEY" in st.secrets:
     api_key = st.secrets["OPENAI_API_KEY"]
 else:
@@ -19,46 +19,13 @@ else:
     user_key = st.sidebar.text_input("Enter OpenRouter API Key (starts with sk-or-v1-)", type="password")
     api_key = user_key
 
-# 3. Define Pydantic Structure for Guardrailed Output
-class UserStory(BaseModel):
-    story: str = Field(description="User story: As a... I want to... So that...")
-    criteria: str = Field(description="Acceptance criteria: Given... When... Then...")
-
-class Conflict(BaseModel):
-    issue: str = Field(description="The core logical conflict or contradiction identified.")
-    severity: str = Field(description="Severity classification: High (🔴 Red), Medium (🟡 Yellow), or Low (🔵 Blue).")
-    fix: str = Field(description="Actionable suggestion to resolve the conflict.")
-
-class Ambiguity(BaseModel):
-    term: str = Field(description="The vague, ambiguous buzzword or phrase detected.")
-    type: str = Field(description="The category of ambiguity, e.g., Performance, UX Design.")
-    suggestion: str = Field(description="The target quantitative metric or boundary standard required.")
-
-class MarketInsight(BaseModel):
-    source: str = Field(description="The public channel data source, e.g., Reddit, Trustpilot, App Store.")
-    finding: str = Field(description="Real-world user complaint or competitor platform failure mode.")
-    action: str = Field(description="Strategic recommendation to outpace competitors.")
-
-class Financials(BaseModel):
-    est_cost: str = Field(description="Estimated implementation pricing scale based on effort hours.")
-    dev_hours: str = Field(description="Total estimated developer hours needed to build the user stories.")
-    infra_cost: str = Field(description="Recommended hosting architecture stack and monthly cost approximation.")
-    trend_analysis: str = Field(description="Current product market trajectory or feature adoption intelligence forecast.")
-
-class ScopePilotAnalysis(BaseModel):
-    user_stories: List[UserStory]
-    conflicts: List[Conflict]
-    ambiguities: List[Ambiguity]
-    market_insights: List[MarketInsight]
-    financials: Financials
-
-# 4. Sidebar Input Controls & Ingestion UI
+# 3. Sidebar Input Controls & Ingestion UI
 st.sidebar.header("📌 Project Configurations")
 product_category = st.sidebar.selectbox(
     "Product Domain Category", 
     ["E-Commerce & Retail", "SaaS Dashboard & Analytics", "FinTech & Payments", "Healthcare & Telemed"]
 )
-target_budget = st.sidebar.slider("Target Investment Boundary ($)", 5000, 200000, 45000, step=5000)
+target_budget = st.sidebar.slider("Target Investment Boundary (\$)", 5000, 200000, 45000, step=5000)
 
 st.subheader("📥 Ingestion Layer: Raw Customer Input")
 raw_input = st.text_area(
@@ -67,7 +34,7 @@ raw_input = st.text_area(
     height=150
 )
 
-# 5. Core OpenRouter Engine Execution
+# 4. Core OpenRouter Engine Execution
 if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
     if not api_key:
         st.error("❌ Please provide a valid OpenRouter API key in your Secrets configuration or sidebar.")
@@ -76,35 +43,52 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
     else:
         with st.spinner("Analyzing requirements via OpenRouter Free Tier..."):
             try:
+                # Prompt instructing the model to output raw, pure JSON text natively
                 system_prompt = (
-                    "You are an Elite Agile Business Analyst, QA Lead, and Product Strategy Director.\n"
-                    "Analyze the provided raw, unstructured customer software requirement text.\n"
-                    "Extract user stories based on INVEST matrix standards, identify absolute contradictions (Conflicts),\n"
-                    "flag unquantifiable buzzwords (Ambiguities), simulate competitor failures/complaints matching the sector from\n"
-                    "Reddit/App Stores (Market Insights), and map out functional delivery timelines & architectural budgets (Financials).\n"
-                    f"Tailor calculations strictly to the context of a {product_category} application."
+                    "You are an Elite Agile Business Analyst and Product Strategy Director.\n"
+                    "Analyze the provided raw customer software requirement text.\n"
+                    "You MUST reply ONLY with a valid JSON object. Do not include markdown code block syntax (like ```json). Just the raw text JSON.\n\n"
+                    "The JSON format must strictly be:\n"
+                    "{\n"
+                    '  "user_stories": [{"story": "As a... I want to... So that...", "criteria": "Given... When... Then..."}],\n'
+                    '  "conflicts": [{"issue": "Description", "severity": "High (🔴 Red)", "fix": "Fix instructions"}],\n'
+                    '  "ambiguities": [{"term": "Vague word", "type": "Performance/UX", "suggestion": "Metric goal"}],\n'
+                    '  "market_insights": [{"source": "Reddit", "finding": "Complaint details", "action": "Recommendation"}],\n'
+                    '  "financials": {"est_cost": "$Value", "dev_hours": "Hours", "infra_cost": "$/mo", "trend_analysis": "Trends summary"}\n'
+                    "}"
                 )
 
-                # Directing the standard OpenAI Client SDK to communicate with OpenRouter Servers
+                # Standard text completion client setup
                 client = openai.OpenAI(
-                    base_url="https://openrouter.ai",  # Overrides OpenAI target base URL
+                    base_url="https://openrouter.ai",
                     api_key=api_key
                 )
                 
-                response = client.beta.chat.completions.parse(
-                    model="openrouter/free",  # Automatically uses free models like Llama/Qwen
+                # Standard completion format (highly compatible with free models)
+                response = client.chat.completions.create(
+                    model="openrouter/free",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"Target Budget: ${target_budget}\nRaw Requirements:\n{raw_input}"}
-                    ],
-                    response_format=ScopePilotAnalysis,
+                    ]
                 )
                 
-                data = response.choices.message.parsed
+                # Safely extract text content string
+                raw_json_text = response.choices[0].message.content.strip()
+                
+                # Clean clean potential markdown formatting wrappers if model included them
+                if raw_json_text.startswith("```"):
+                    raw_json_text = raw_json_text.split("```")[1]
+                    if raw_json_text.startswith("json"):
+                        raw_json_text = raw_json_text[4:]
+                
+                # Convert string directly to Python dictionary object
+                data = json.loads(raw_json_text.strip())
+                
                 st.success("✅ Lifecycle Analysis Complete! Exploration Dashboard Generated.")
                 st.divider()
 
-                # 6. Tabbed UI Framework Rendering (Phases 2 - 5)
+                # 5. Tabbed UI Framework Rendering
                 tab1, tab2, tab3, tab4 = st.tabs([
                     "🟢 Actionable Requirements", 
                     "⚠️ Risk & Ambiguity Audit", 
@@ -114,10 +98,10 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
                 
                 with tab1:
                     st.subheader("📝 Development-Ready Specifications")
-                    if data.user_stories:
-                        for i, us in enumerate(data.user_stories):
-                            st.info(f"**User Story {i+1}:** {us.story}")
-                            st.code(f"Acceptance Criteria (Gherkin Syntax):\n{us.criteria}", language="gherkin")
+                    if "user_stories" in data:
+                        for i, us in enumerate(data["user_stories"]):
+                            st.info(f"**User Story {i+1}:** {us.get('story', '')}")
+                            st.code(f"Acceptance Criteria (Gherkin Syntax):\n{us.get('criteria', '')}", language="gherkin")
                     
                     if st.button("🚀 Export directly to Jira Backlog"):
                         st.balloons()
@@ -126,33 +110,38 @@ if st.button("🔥 Run Complete Discovery & Analysis Pipeline", type="primary"):
                 with tab2:
                     st.subheader("🕵️‍♂️ Architectural Risk Audit")
                     st.markdown("### 🔴 Critical Contradictions & System Conflicts")
-                    if data.conflicts:
-                        for c in data.conflicts:
-                            st.error(f"**Conflict:** {c.issue} | **Severity:** {c.severity}\n\n*Suggested Resolution:* {c.fix}")
+                    if "conflicts" in data and data["conflicts"]:
+                        for c in data["conflicts"]:
+                            st.error(f"**Conflict:** {c.get('issue','')} | **Severity:** {c.get('severity', '')}\n\n*Suggested Resolution:* {c.get('fix', '')}")
+                    else:
+                        st.success("No critical logical contradictions found.")
                     
                     st.markdown("### 🟡 Unquantified Ambiguities Detected")
-                    if data.ambiguities:
-                        for a in data.ambiguities:
-                            st.warning(f"**Vague Term:** '{a.term}' ({a.type}) -> **Required Engineering Target:** {a.suggestion}")
+                    if "ambiguities" in data:
+                        for a in data["ambiguities"]:
+                            st.warning(f"**Vague Term:** '{a.get('term', '')}' ({a.get('type', '')}) -> **Required Engineering Target:** {a.get('suggestion', '')}")
 
                 with tab3:
                     st.subheader("🕵️‍♀️ Market Sentiment & Competitor Failure Modes")
                     st.write(f"Synthesized online user consensus arrays relating to modern **{product_category}** vectors:")
-                    if data.market_insights:
-                        for m in data.market_insights:
-                            st.markdown(f"🔹 **Source Context:** {m.source}\n* **Market Data Point:** {m.finding}\n* **Product Strategy Action:** {m.action}")
+                    if "market_insights" in data:
+                        for m in data["market_insights"]:
+                            st.markdown(f"🔹 **Source Context:** {m.get('source', '')}\n* **Market Data Point:** {m.get('finding', '')}\n* **Product Strategy Action:** {m.get('action', '')}")
 
                 with tab4:
                     st.subheader("💰 Executive Investment & Architecture Guide")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric(label="Estimated Implementation Budget", value=data.financials.est_cost)
-                        st.metric(label="Estimated Cloud Infrastructure Costs", value=data.financials.infra_cost)
-                    with col2:
-                        st.metric(label="Total Projected Engineering Effort", value=data.financials.dev_hours)
-                    
-                    st.markdown("### 🔍 Current Strategic Trend Assessment")
-                    st.info(data.financials.trend_analysis)
+                    if "financials" in data:
+                        fin = data["financials"]
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric(label="Estimated Implementation Budget", value=fin.get('est_cost', 'N/A'))
+                            st.metric(label="Estimated Cloud Infrastructure Costs", value=fin.get('infra_cost', 'N/A'))
+                        with col2:
+                            st.metric(label="Total Projected Engineering Effort", value=fin.get('dev_hours', 'N/A'))
+                        
+                        st.markdown("### 🔍 Current Strategic Trend Assessment")
+                        st.info(fin.get('trend_analysis', 'No data generated.'))
 
             except Exception as e:
-                st.error(f"An unexpected parsing pipeline exception occurred: {str(e)}")
+                st.error(f"Failed to safely compile or parse data structure layout: {str(e)}")
+                st.info("💡 Tip: Try clicking the button again. Free models sometimes return inconsistent text structures on the first attempt.")
